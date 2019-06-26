@@ -6,6 +6,7 @@
 #include <iostream>
 #include <list>
 #include <vector>
+#include <time.h>
 
 using namespace std;
 
@@ -259,6 +260,16 @@ public:
             _display();
         }
     }
+    bool EliminarPuntoSeleccionado(void (*_display)()){
+        if(indicePuntoSeleccionado >= 0 && configuracionPuntos->GetModificabilidad() == OPCION_ACTIVADO){
+            puntosControl->erase(puntosControl->begin() + indicePuntoSeleccionado);
+            indicePuntoSeleccionado = -1;
+            _display();
+            return true;
+        }
+        return false;
+    }
+
     int SeleccionarPuntoAMover(GLfloat _radioDeteccion, Coordenada cord){
         SeleccionarPuntoAMover(_radioDeteccion,cord.GetX(),cord.GetY(),cord.GetZ());
     }
@@ -331,6 +342,8 @@ CurvaSpline *miCurva;
 
 int main(int argc, char** argv)
 {
+    srand (time(0));
+
     miCurva = new CurvaSpline();
 
     glutInit(&argc, argv);
@@ -400,7 +413,7 @@ int main(int argc, char** argv)
     glutAddSubMenu("Ingreso de puntos", menu_ingresopuntos);
     glutAddSubMenu("Dibujar", menu_dibujar);
     glutAddSubMenu("Zoom", menu_zoom);
-    glutAddSubMenu("Movimiento puntos", menu_modificarpuntos);
+    glutAddSubMenu("Modificacion puntos", menu_modificarpuntos);
     glutAddSubMenu("Pincel Movil", menu_pincelmovilpuntos);
     glutAddSubMenu("Grosor", menu_grosor);
     glutAddSubMenu("Color", menu_color);
@@ -460,6 +473,8 @@ void keyboard(unsigned char key, int x, int y)
         break;
     }
 }
+time_t tiempoAnterior;
+time_t tiempoActual;
 
 void mouse(int button,int state,int x,int y)
 {
@@ -469,12 +484,20 @@ void mouse(int button,int state,int x,int y)
 	case GLUT_LEFT_BUTTON:
 		if(state==GLUT_DOWN){
             if(!puntoSeleccionado){
-                puntoSeleccionado = miCurva->SeleccionarPuntoAMover(5.0f,puntoMapeado) >= 0;
+                puntoSeleccionado = miCurva->SeleccionarPuntoAMover(8.0f,puntoMapeado) >= 0;
+
                 if(!puntoSeleccionado){
                     miCurva->AgregarPunto(display,puntoMapeado);
+                }else{
+                    time(&tiempoAnterior);
                 }
             }else{
-                miCurva->SoltarPuntoAMover(display);
+                time(&tiempoActual);
+                if(tiempoActual - tiempoAnterior <= 0.5){
+                    miCurva->EliminarPuntoSeleccionado(display);
+                }else{
+                    miCurva->SoltarPuntoAMover(display);
+                }
                 puntoSeleccionado = false;
             }
 		}
@@ -609,6 +632,10 @@ void menuColorPcontrol(int opc){
             break;
         }
         case COLOR_RANDOM:{
+            GLfloat r = ((double) rand() / (RAND_MAX));
+            GLfloat g = ((double) rand() / (RAND_MAX));
+            GLfloat b = ((double) rand() / (RAND_MAX));
+            miCurva->GetConfiguracionPuntosControl()->SetColor(r,g,b);
             break;
         }
     }
@@ -629,6 +656,10 @@ void menuColorCurvaSpline(int opc){
             break;
         }
         case COLOR_RANDOM:{
+            GLfloat r = ((double) rand() / (RAND_MAX));
+            GLfloat g = ((double) rand() / (RAND_MAX));
+            GLfloat b = ((double) rand() / (RAND_MAX));
+            miCurva->GetConfiguracionCurvaSpline()->SetColor(r,g,b);
             break;
         }
     }
