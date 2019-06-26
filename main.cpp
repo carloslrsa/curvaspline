@@ -25,6 +25,8 @@ const int COLOR_VERDE = 2;
 const int COLOR_AZUL = 3;
 const int COLOR_RANDOM = 4;
 
+GLfloat const EJE_TAMANO = 200;
+
 class Color{
     public:
     GLfloat r = 0;
@@ -37,6 +39,7 @@ class Coordenada{
     GLfloat x;
     GLfloat y;
     GLfloat z;
+
 public:
     Coordenada(GLfloat _x, GLfloat _y, GLfloat _z = 0.0f) : x(_x), y(_y), z(_z) {}
 
@@ -47,12 +50,83 @@ public:
     GLfloat GetZ(){return z;}
     void SetZ(GLfloat _z){z = _z;}
 
+    void Set(GLfloat _x, GLfloat _y, GLfloat _z){x = _x; y = _y; z = _z;}
+
     Coordenada operator -(Coordenada c2){ return Coordenada(x-c2.x,y-c2.y,z-c2.z); }
     Coordenada operator +(Coordenada c2){ return Coordenada(x+c2.x,y+c2.y,z+c2.z); }
     Coordenada operator *(GLfloat n){ return Coordenada(x * n, y * n, z * n); }
     Coordenada operator /(GLfloat n){ return Coordenada(x / n, y / n, z / n); }
 
+    GLfloat Distancia(GLfloat _x, GLfloat _y, GLfloat _z = 0){
+        GLfloat dx = _x - x;
+        GLfloat dy = _y - y;
+        GLfloat dz = _z - z;
+        return sqrt(dx*dx + dy*dy + dz*dz);
+    }
+
+    void Interpolar(GLfloat _velocidad, GLfloat _x, GLfloat _y, GLfloat _z = 0){
+        GLfloat dx = _x - x;
+        GLfloat dy = _y - y;
+        GLfloat dz = _z - z;
+        GLfloat d = sqrt(dx*dx + dy*dy + dz*dz);
+        if(d >= 0.01 * _velocidad){
+            GLfloat factor = 0.01 * _velocidad / d;
+            dx = dx * factor;
+            dy = dy * factor;
+            dz = dz * factor;
+            x = x + dx;
+            y = y + dy;
+            z = z + dz;
+        }
+    }
+
+    bool PuntoCercano(GLfloat _distancia, GLfloat _x, GLfloat _y, GLfloat _z = 0){
+        return Distancia(_x,_y,_z) <= _distancia;
+    }
+
+
     ~Coordenada(){}
+};
+
+class GeneradorFormas{
+public:
+    void Circulo(int radio, Coordenada centro){
+        glPointSize(0.1f);
+        glPushMatrix();
+            glTranslatef(centro.GetX(), centro.GetY(), centro.GetZ());
+            int cantidadPuntos = 100;
+            float angulo = 2.0f * 3.1416f / cantidadPuntos;
+
+            glBegin(GL_POLYGON);
+                double angulo1=0.0;
+                glVertex2d(radio * cos(0.0) , radio * sin(0.0));
+                int i;
+                for (i=0; i<cantidadPuntos; i++)
+                {
+                    glVertex2d(radio * cos(angulo1), radio *sin(angulo1));
+                    angulo1 += angulo;
+                }
+            glEnd();
+        glPopMatrix();
+    }
+    void Cuadrado(int lado, Coordenada centro){
+        glPointSize(lado);
+        glBegin(GL_POINTS);
+            glVertex3f(centro.GetX(),centro.GetY(),centro.GetZ());
+        glEnd();
+    }
+    void Triangulo(int lado, Coordenada centro){
+        glPointSize(0.01f);
+        glPushMatrix();
+            glTranslatef(centro.GetX(), centro.GetY(), centro.GetZ());
+
+            glBegin(GL_TRIANGLES);
+                glVertex3f(0.0, 0.57735f * lado, 0.0);
+                glVertex3f(0.5 * lado, - 0.28868 * lado, 0.0);
+                glVertex3f(- 0.5 * lado, - 0.28868 * lado, 0.0);
+            glEnd();
+        glPopMatrix();
+    }
 };
 
 class CurvaSpline{
@@ -72,38 +146,76 @@ class CurvaSpline{
         Color* GetColor(){return color;}
         void SetColor(GLfloat _r, GLfloat _g, GLfloat _b){color->r = _r; color->g = _g; color->b = _b;}
         GLfloat GetGrosor(){return grosor;}
-        void SetGrosor(GLfloat _grosor){grosor = _grosor;}
+        void SetGrosor(GLfloat _grosor){if(_grosor <= GROSOR_MAXIMO && _grosor >= GROSOR_MINIMO) grosor = _grosor;}
 
         ~CurvaSplineConfiguracion(){delete color;}
     };
     class PuntoControlConfiguracion : public CurvaSplineConfiguracion {
         int forma;
         int ingreso;
+        int modificabilidad;
     public:
-        PuntoControlConfiguracion(int _visibilidad, Color* _color, GLfloat _grosor, int _forma, int _ingreso) : CurvaSplineConfiguracion(_visibilidad,_color,_grosor){
+        PuntoControlConfiguracion(int _visibilidad, Color* _color, GLfloat _grosor, int _forma, int _ingreso, int _modificabilidad) : CurvaSplineConfiguracion(_visibilidad,_color,_grosor){
             forma = _forma;
             ingreso = _ingreso;
+            modificabilidad = _modificabilidad;
         }
         int GetForma(){return forma;}
         void SetForma(int _forma){forma = _forma;}
         int GetIngreso(){return ingreso;}
         void SetIngreso(int _ingreso){ingreso = _ingreso;}
+        int GetModificabilidad(){return modificabilidad;}
+        void SetModificabilidad(int _modificabilidad){modificabilidad = _modificabilidad;}
     };
 
     CurvaSplineConfiguracion *configuracionCurva;
     PuntoControlConfiguracion *configuracionPuntos;
-
+    GeneradorFormas *generadorFormas;
     vector<Coordenada> *puntosControl;
+
+    Coordenada *puntoDestino;
+    int indicePuntoSeleccionado = -1;
 
     void dibujarPuntos(){
         if(configuracionPuntos->GetVisibilidad() == OPCION_ACTIVADO){
-            glPointSize(configuracionPuntos->GetGrosor());
             glColor3f(configuracionPuntos->GetColor()->r,configuracionPuntos->GetColor()->g,configuracionPuntos->GetColor()->b);
-            glBegin(GL_POINTS);
-                for(int i = 0; i< puntosControl->size(); i++){
-                    glVertex3f((*puntosControl)[i].GetX(),(*puntosControl)[i].GetY(),(*puntosControl)[i].GetZ());
+            for(int i = 0; i< puntosControl->size(); i++){
+                if(i != indicePuntoSeleccionado){
+                    switch(configuracionPuntos->GetForma()){
+                        case FORMA_CIRCULO:{
+                            generadorFormas->Circulo(configuracionPuntos->GetGrosor() / 2.0,(*puntosControl)[i]);
+                            break;
+                        }
+                        case FORMA_CUADRADO:{
+                            generadorFormas->Cuadrado(configuracionPuntos->GetGrosor(),(*puntosControl)[i]);
+                            break;
+                        }
+                        case FORMA_TRIANGULO:{
+                            generadorFormas->Triangulo(configuracionPuntos->GetGrosor(),(*puntosControl)[i]);
+                            break;
+                        }
+                    }
                 }
-            glEnd();
+            }
+
+            if(indicePuntoSeleccionado >= 0){
+                glColor3f(1 - configuracionPuntos->GetColor()->r,1 - configuracionPuntos->GetColor()->g,1 - configuracionPuntos->GetColor()->b);
+                switch(configuracionPuntos->GetForma()){
+                    case FORMA_CIRCULO:{
+                        generadorFormas->Circulo(configuracionPuntos->GetGrosor() / 2.0,(*puntosControl)[indicePuntoSeleccionado]);
+                        break;
+                    }
+                    case FORMA_CUADRADO:{
+                        generadorFormas->Cuadrado(configuracionPuntos->GetGrosor(),(*puntosControl)[indicePuntoSeleccionado]);
+                        break;
+                    }
+                    case FORMA_TRIANGULO:{
+                        generadorFormas->Triangulo(configuracionPuntos->GetGrosor(),(*puntosControl)[indicePuntoSeleccionado]);
+                        break;
+                    }
+                }
+
+            }
         }
     }
     void dibujarCurvaSpline(){
@@ -125,9 +237,11 @@ class CurvaSpline{
     }
 public:
     CurvaSpline(){
+        generadorFormas = new GeneradorFormas();
         puntosControl = new vector<Coordenada>();
         configuracionCurva = new CurvaSplineConfiguracion(OPCION_ACTIVADO,new Color(0.0,0.0,1.0),2);
-        configuracionPuntos = new PuntoControlConfiguracion(OPCION_ACTIVADO,new Color(1.0,0.0,0.0),5,FORMA_CIRCULO, OPCION_ACTIVADO);
+        configuracionPuntos = new PuntoControlConfiguracion(OPCION_ACTIVADO,new Color(1.0,0.0,0.0),5,FORMA_CIRCULO, OPCION_ACTIVADO, OPCION_ACTIVADO);
+        puntoDestino = new Coordenada(0.0,0.0,0.0);
     }
     bool Dibujar(){
         glPushMatrix();
@@ -136,12 +250,42 @@ public:
         glPopMatrix();
         return true;
     }
-    void AgregarPunto(void (*_display)(), GLfloat x, GLfloat y, GLfloat z = 0){
-        AgregarPunto(_display,Coordenada(x,y,z));
+    void AgregarPunto(void (*_display)(), GLfloat _x, GLfloat _y, GLfloat _z = 0){
+        AgregarPunto(_display,Coordenada(_x,_y,_z));
     }
     void AgregarPunto(void (*_display)(), Coordenada coordenada){
         if(configuracionPuntos->GetIngreso() == OPCION_ACTIVADO){
             puntosControl->push_back(coordenada);
+            _display();
+        }
+    }
+    int SeleccionarPuntoAMover(GLfloat _radioDeteccion, Coordenada cord){
+        SeleccionarPuntoAMover(_radioDeteccion,cord.GetX(),cord.GetY(),cord.GetZ());
+    }
+    int SeleccionarPuntoAMover(GLfloat _radioDeteccion, GLfloat _x, GLfloat _y, GLfloat _z = 0){
+        if(indicePuntoSeleccionado < 0 && configuracionPuntos->GetModificabilidad() == OPCION_ACTIVADO){
+            int ultimo = puntosControl->size() - 1;
+            for(int i=ultimo; i >= 0; i--){
+                if((*puntosControl)[i].PuntoCercano(_radioDeteccion,_x,_y,_z)){
+                    indicePuntoSeleccionado = i;
+                    puntoDestino->Set(_x,_y,_z);
+                    break;
+                }
+            }
+        }
+        return indicePuntoSeleccionado;
+    }
+    void SoltarPuntoAMover(void (*_display)()){
+        indicePuntoSeleccionado = -1;
+        _display();
+    }
+    void MoverPuntoSeleccionado(GLfloat _x, GLfloat _y, GLfloat _z = 0){
+        puntoDestino->Set(_x,_y,_z);
+    }
+
+    void Update(void (*_display)()){
+        if(indicePuntoSeleccionado >= 0 && configuracionPuntos->GetModificabilidad() == OPCION_ACTIVADO){
+            (*puntosControl)[indicePuntoSeleccionado].Interpolar(100.0f,puntoDestino->GetX(),puntoDestino->GetY(),puntoDestino->GetZ());
             _display();
         }
     }
@@ -154,16 +298,16 @@ public:
 };
 void init(void);
 void display(void);
+void update(void);
 void reshape(int,int);
 void keyboard(unsigned char, int, int);
 void mouse(int button,int state,int x,int y);
+void mousePassive(int x,int y);
 void GraficarPuntos();
 void GraficarCurvaSpline();
 
-Coordenada mapScreenPointToWindow(int, int);
-
-float dim=400;
-int paso=0;
+void ejes();
+Coordenada mapeoPuntoPantallaAVentana(int, int);
 
 void menuIngresoPuntos(int);
 void menuDibujarPcontrol(int);
@@ -176,6 +320,12 @@ void menuGrosorCurvaSpline(int);
 void menuColorPcontrol(int);
 void menuColorCurvaSpline(int);
 void menuPrincipal(int);
+
+float dim=400;
+int w, h;
+GLfloat zoom = 1;
+int estadoZoom = OPCION_ACTIVADO;
+bool puntoSeleccionado = false;
 
 CurvaSpline *miCurva;
 
@@ -250,7 +400,7 @@ int main(int argc, char** argv)
     glutAddSubMenu("Ingreso de puntos", menu_ingresopuntos);
     glutAddSubMenu("Dibujar", menu_dibujar);
     glutAddSubMenu("Zoom", menu_zoom);
-    glutAddSubMenu("Modificar puntos", menu_modificarpuntos);
+    glutAddSubMenu("Movimiento puntos", menu_modificarpuntos);
     glutAddSubMenu("Pincel Movil", menu_pincelmovilpuntos);
     glutAddSubMenu("Grosor", menu_grosor);
     glutAddSubMenu("Color", menu_color);
@@ -262,6 +412,8 @@ int main(int argc, char** argv)
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
     glutMouseFunc(mouse);
+    glutPassiveMotionFunc(mousePassive);
+    glutIdleFunc(update);
     glutMainLoop();
     return 0;
 }
@@ -276,56 +428,84 @@ void init(void)
 void display(void)
 {
     glClear(GL_COLOR_BUFFER_BIT);
+    reshape(w,h);
+
+    ejes();
     miCurva->Dibujar();
     glFlush();
+}
+void update(void){
+    miCurva->Update(display);
+
+    Sleep(1);
 }
 void keyboard(unsigned char key, int x, int y)
 {
     switch (key)
     {
-    case 'b':
-        paso=1;
-// se grafica la curva de Bezier
-        glutPostRedisplay();
+    case '+':
+        if(estadoZoom == OPCION_ACTIVADO){
+            zoom -= 0.05;
+            glutPostRedisplay();
+        }
         break;
-    case 'n':
-        paso=0;
-// No se grafica la curva de Bezier
-        glutPostRedisplay();
+    case '-':
+        if(estadoZoom == OPCION_ACTIVADO){
+            zoom += 0.05;
+            glutPostRedisplay();
+        }
         break;
     case 27:
         exit(0);
         break;
     }
 }
+
 void mouse(int button,int state,int x,int y)
 {
+    Coordenada puntoMapeado = mapeoPuntoPantallaAVentana(x,y);
 	switch(button)
 	{
 	case GLUT_LEFT_BUTTON:
 		if(state==GLUT_DOWN){
-            miCurva->AgregarPunto(display,mapScreenPointToWindow(x,y));
+            if(!puntoSeleccionado){
+                puntoSeleccionado = miCurva->SeleccionarPuntoAMover(5.0f,puntoMapeado) >= 0;
+                if(!puntoSeleccionado){
+                    miCurva->AgregarPunto(display,puntoMapeado);
+                }
+            }else{
+                miCurva->SoltarPuntoAMover(display);
+                puntoSeleccionado = false;
+            }
 		}
 		break;
-	case GLUT_MIDDLE_BUTTON:
-		break;
-	case GLUT_RIGHT_BUTTON:
-		break;
+
 	default:
 		break;
 	}
 }
-void reshape(int w, int h)
+
+void mousePassive(int x,int y){
+    if(puntoSeleccionado){
+        Coordenada puntoMapeado = mapeoPuntoPantallaAVentana(x,y);
+        miCurva->MoverPuntoSeleccionado(puntoMapeado.GetX(),puntoMapeado.GetY(),puntoMapeado.GetZ());
+    }
+}
+
+void reshape(int _w, int _h)
 {
+    w = _w; h = _h;
+
     glViewport(0,0,(GLsizei)w, (GLsizei)h);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(-w/2,w/2,-h/2,h/2,-1.0,1.0);
+    glOrtho(-(w*zoom)/2,(w*zoom)/2,-(h*zoom)/2,(h*zoom)/2,-1.0,1.0);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
 
-Coordenada mapScreenPointToWindow(int x, int y){
+Coordenada mapeoPuntoPantallaAVentana(int x, int y){
+
     Coordenada retorno(0.0,0.0);
     x = x + glutGet((GLenum)GLUT_WINDOW_X);
     y = y + glutGet((GLenum)GLUT_WINDOW_Y);
@@ -333,10 +513,32 @@ Coordenada mapScreenPointToWindow(int x, int y){
     int px0 = glutGet((GLenum)GLUT_WINDOW_X) + glutGet(GLUT_WINDOW_WIDTH) / 2;
     int py0 = glutGet((GLenum)GLUT_WINDOW_Y) + glutGet(GLUT_WINDOW_HEIGHT) / 2;
 
-    retorno.SetX(x - px0);
-    retorno.SetY(py0 - y);
+    retorno.SetX((x - px0)*zoom);
+    retorno.SetY((py0 - y)*zoom);
 
     return retorno;
+}
+
+void ejes(){
+    //x
+    glBegin(GL_LINES);
+        glColor3f(1.0,0.0,0.0);
+        glVertex3f(0.0,0.0,0.0);
+        glVertex3f(EJE_TAMANO,0.0,0.0);
+    glEnd();
+
+    //y
+    glBegin(GL_LINES);
+        glColor3f(0.0,1.0,0.0);
+        glVertex3f(0.0,0.0,0.0);
+        glVertex3f(0.0,EJE_TAMANO,0.0);
+    glEnd();
+    //x
+    glBegin(GL_LINES);
+        glColor3f(0.0,0.0,1.0);
+        glVertex3f(0.0,0.0,0.0);
+        glVertex3f(0.0,0.0,EJE_TAMANO);
+    glEnd();
 }
 
 void menuIngresoPuntos(int opc){
@@ -351,79 +553,86 @@ void menuDibujarCurvaSpline(int opc){
     display();
 }
 void menuZoom(int opc){
-    switch(opc){
-        case OPCION_ACTIVADO:{
-            break;
-        }
-        case OPCION_DESACTIVADO:{
-            break;
-        }
-    }
+    estadoZoom = opc;
 }
 void menuModificarPuntos(int opc){
-    switch(opc){
-        case OPCION_ACTIVADO:{
-            break;
-        }
-        case OPCION_DESACTIVADO:{
-            break;
-        }
+    miCurva->GetConfiguracionPuntosControl()->SetModificabilidad(opc);
+    if(opc == OPCION_DESACTIVADO){
+        miCurva->SoltarPuntoAMover(display);
+        puntoSeleccionado = false;
     }
 }
 void menuPincelMovilPuntos(int opc){
     miCurva->GetConfiguracionPuntosControl()->SetForma(opc);
+    display();
 }
 void menuGrosorPcontrol(int opc){
+    GLfloat aumento = 1.0f;
     switch(opc){
         case OPCION_AUMENTAR:{
+            miCurva->GetConfiguracionPuntosControl()->SetGrosor(miCurva->GetConfiguracionPuntosControl()->GetGrosor() + aumento);
             break;
         }
         case OPCION_DISMINUIR:{
+            miCurva->GetConfiguracionPuntosControl()->SetGrosor(miCurva->GetConfiguracionPuntosControl()->GetGrosor() - aumento);
             break;
         }
     }
+    display();
 }
 void menuGrosorCurvaSpline(int opc){
+    GLfloat aumento = 1.0f;
     switch(opc){
         case OPCION_AUMENTAR:{
+            miCurva->GetConfiguracionCurvaSpline()->SetGrosor(miCurva->GetConfiguracionCurvaSpline()->GetGrosor() + aumento);
             break;
         }
         case OPCION_DISMINUIR:{
+            miCurva->GetConfiguracionCurvaSpline()->SetGrosor(miCurva->GetConfiguracionCurvaSpline()->GetGrosor() - aumento);
             break;
         }
     }
+    display();
 }
 void menuColorPcontrol(int opc){
     switch(opc){
         case COLOR_ROJO:{
+            miCurva->GetConfiguracionPuntosControl()->SetColor(1.0,0.0,0.0);
             break;
         }
         case COLOR_VERDE:{
+            miCurva->GetConfiguracionPuntosControl()->SetColor(0.0,1.0,0.0);
             break;
         }
         case COLOR_AZUL:{
+            miCurva->GetConfiguracionPuntosControl()->SetColor(0.0,0.0,1.0);
             break;
         }
         case COLOR_RANDOM:{
             break;
         }
     }
+    display();
 }
 void menuColorCurvaSpline(int opc){
     switch(opc){
         case COLOR_ROJO:{
+            miCurva->GetConfiguracionCurvaSpline()->SetColor(1.0,0.0,0.0);
             break;
         }
         case COLOR_VERDE:{
+            miCurva->GetConfiguracionCurvaSpline()->SetColor(0.0,1.0,0.0);
             break;
         }
         case COLOR_AZUL:{
+            miCurva->GetConfiguracionCurvaSpline()->SetColor(0.0,0.0,1.0);
             break;
         }
         case COLOR_RANDOM:{
             break;
         }
     }
+    display();
 }
 void menuPrincipal(int opc){
     //Definir salir si es necesario
